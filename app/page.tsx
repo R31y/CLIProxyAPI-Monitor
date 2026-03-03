@@ -62,12 +62,12 @@ function normalizeTooltipValue(value: TooltipValue) {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
-const trendTooltipFormatter: TooltipProps<number, string>["formatter"] = (value, name) => {
+const trendTooltipFormatter: TooltipProps<number, string>["formatter"] = (value: number, name: string) => {
   const numericValue = normalizeTooltipValue(value);
   return name === "费用" ? [formatCurrency(numericValue), name] : [formatNumberWithCommas(numericValue), name];
 };
 
-const numericTooltipFormatter: TooltipProps<number, string>["formatter"] = (value, name) => {
+const numericTooltipFormatter: TooltipProps<number, string>["formatter"] = (value: number, name: string) => {
   const numericValue = normalizeTooltipValue(value);
   return [formatNumberWithCommas(numericValue), name];
 };
@@ -1382,7 +1382,7 @@ export default function DashboardPage() {
             <div className={`animate-card-float rounded-2xl p-5 shadow-sm ring-1 transition-all duration-200 ${darkMode ? "bg-gradient-to-br from-emerald-600/20 to-emerald-800/10 ring-emerald-500/30 hover:shadow-lg hover:shadow-emerald-500/20 hover:ring-emerald-500/50" : "bg-emerald-50 ring-emerald-200 hover:shadow-lg hover:ring-emerald-300"}`} style={{ animationDelay: '0.2s' }}>
               <div className="text-sm uppercase tracking-wide text-emerald-400">平均 TPM</div>
               <div className={`mt-3 text-2xl font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>
-                {(overviewData.totalTokens / actualTimeSpan.minutes).toFixed(2)}
+                {(() => { const v = overviewData.totalTokens / actualTimeSpan.minutes; return v >= 1000 ? formatCompactNumber(Math.round(v)) : v.toFixed(2); })()}
               </div>
               <p className={`mt-2 text-xs ${darkMode ? "text-emerald-300/70" : "text-emerald-600/70"}`}>每分钟Token</p>
             </div>
@@ -1458,13 +1458,13 @@ export default function DashboardPage() {
                     yAxisId="cost"
                     orientation="right"
                     stroke="#fbbf24"
-                    tickFormatter={(v) => formatCurrency(v)}
+                    tickFormatter={(v: number) => formatCurrency(v)}
                     fontSize={12}
                     hide={!trendVisible.cost || (trendVisible.requests && trendVisible.tokens)}
                     width={trendVisible.cost && (!trendVisible.requests || !trendVisible.tokens) ? undefined : 0}
                   />
                   <Tooltip 
-                    content={({ active, payload, label }) => {
+                    content={({ active, payload, label }: { active?: boolean; payload?: any[]; label?: string }) => {
                       if (!active || !payload || !payload.length) return null;
                       const sortedPayload = [...payload].sort((a: any, b: any) => {
                         const order: Record<string, number> = { requests: 0, errors: 1, tokens: 2, cost: 3 };
@@ -1597,7 +1597,7 @@ export default function DashboardPage() {
                         outerRadius="85%"
                         innerRadius="45%"
                         animationDuration={500}
-                        onMouseEnter={(_, index) => {
+                        onMouseEnter={(_: unknown, index: number) => {
                           setHoveredPieIndex(index);
                           setPieTooltipOpen(true);
                         }}
@@ -1618,7 +1618,7 @@ export default function DashboardPage() {
                       <Tooltip
                         position={{ x: 0, y: 0 }}
                         wrapperStyle={{ zIndex: 1000, pointerEvents: "none" }}
-                        content={({ active, payload }) => {
+                        content={({ active, payload }: { active?: boolean; payload?: any[] }) => {
                           if (!pieTooltipOpen || hoveredPieIndex === null) return null;
                           if (!active || !payload || !payload[0]) return null;
                           const data = payload[0].payload;
@@ -1778,10 +1778,10 @@ export default function DashboardPage() {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? "#334155" : "#e2e8f0"} />
                   <XAxis dataKey="label" stroke={darkMode ? "#94a3b8" : "#64748b"} fontSize={12} tickFormatter={formatHourLabel} />
-                  <YAxis yAxisId="left" stroke={darkMode ? "#60a5fa" : "#3b82f6"} tickFormatter={(v) => formatCompactNumber(v)} fontSize={12} />
-                  <YAxis yAxisId="right" orientation="right" stroke={darkMode ? "#94a3b8" : "#64748b"} tickFormatter={(v) => formatCompactNumber(v)} fontSize={12} />
+                  <YAxis yAxisId="left" stroke={darkMode ? "#60a5fa" : "#3b82f6"} tickFormatter={(v: number) => formatCompactNumber(v)} fontSize={12} />
+                  <YAxis yAxisId="right" orientation="right" stroke={darkMode ? "#94a3b8" : "#64748b"} tickFormatter={(v: number) => formatCompactNumber(v)} fontSize={12} />
                   <Tooltip 
-                    content={({ active, payload, label }) => {
+                    content={({ active, payload, label }: { active?: boolean; payload?: any[]; label?: string }) => {
                       if (!active || !payload || !payload.length) return null;
                       const sortedPayload = [...payload].sort((a: any, b: any) => {
                         const order: Record<string, number> = { requests: 0, inputTokens: 1, outputTokens: 2, reasoningTokens: 3, cachedTokens: 4 };
@@ -2219,13 +2219,13 @@ export default function DashboardPage() {
                   yAxisId="cost"
                   orientation="right"
                   stroke="#fbbf24"
-                  tickFormatter={(v) => formatCurrency(v)}
+                  tickFormatter={(v: number) => formatCurrency(v)}
                   fontSize={12}
                   hide={!trendVisible.cost || (trendVisible.requests && trendVisible.tokens)}
                   width={trendVisible.cost && (!trendVisible.requests || !trendVisible.tokens) ? undefined : 0}
                 />
                 <Tooltip
-                  content={({ active, payload, label }) => {
+                  content={({ active, payload, label }: { active?: boolean; payload?: any[]; label?: string }) => {
                     if (!active || !payload || !payload.length) return null;
                     const sortedPayload = [...payload].sort((a: any, b: any) => {
                       const order: Record<string, number> = { requests: 0, errors: 1, tokens: 2, cost: 3 };
@@ -2343,7 +2343,7 @@ export default function DashboardPage() {
                         outerRadius="75%"
                         innerRadius="40%"
                         animationDuration={500}
-                        onMouseEnter={(_, index) => {
+                        onMouseEnter={(_: unknown, index: number) => {
                           setHoveredPieIndex(index);
                           setPieTooltipOpen(true);
                         }}
@@ -2364,7 +2364,7 @@ export default function DashboardPage() {
                       <Tooltip 
                         position={{ x: 0, y: 0 }}
                         wrapperStyle={{ zIndex: 1000, pointerEvents: "none" }}
-                        content={({ active, payload }) => {
+                        content={({ active, payload }: { active?: boolean; payload?: any[] }) => {
                           if (!pieTooltipOpen || hoveredPieIndex === null) return null;
                           if (!active || !payload || !payload[0]) return null;
                           const data = payload[0].payload;
@@ -2516,10 +2516,10 @@ export default function DashboardPage() {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? "#334155" : "#e2e8f0"} />
                   <XAxis dataKey="label" stroke={darkMode ? "#94a3b8" : "#64748b"} fontSize={12} tickFormatter={formatHourLabel} />
-                  <YAxis yAxisId="left" stroke={darkMode ? "#60a5fa" : "#3b82f6"} tickFormatter={(v) => formatCompactNumber(v)} fontSize={12} />
-                  <YAxis yAxisId="right" orientation="right" stroke={darkMode ? "#94a3b8" : "#64748b"} tickFormatter={(v) => formatCompactNumber(v)} fontSize={12} />
+                  <YAxis yAxisId="left" stroke={darkMode ? "#60a5fa" : "#3b82f6"} tickFormatter={(v: number) => formatCompactNumber(v)} fontSize={12} />
+                  <YAxis yAxisId="right" orientation="right" stroke={darkMode ? "#94a3b8" : "#64748b"} tickFormatter={(v: number) => formatCompactNumber(v)} fontSize={12} />
                   <Tooltip 
-                    content={({ active, payload, label }) => {
+                    content={({ active, payload, label }: { active?: boolean; payload?: any[]; label?: string }) => {
                       if (!active || !payload || !payload.length) return null;
                       const sortedPayload = [...payload].sort((a: any, b: any) => {
                         const order: Record<string, number> = { requests: 0, inputTokens: 1, outputTokens: 2, reasoningTokens: 3, cachedTokens: 4 };
