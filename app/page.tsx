@@ -1445,7 +1445,7 @@ export default function DashboardPage() {
                     width={trendVisible.cost && (!trendVisible.requests || !trendVisible.tokens) ? undefined : 0}
                   />
                   <Tooltip 
-                    content={({ active, payload, label }: { active?: boolean; payload?: any[]; label?: string }) => {
+                    content={({ active, payload, label }: { active?: boolean; payload?: readonly any[]; label?: string }) => {
                       if (!active || !payload || !payload.length) return null;
                       const sortedPayload = [...payload].sort((a: any, b: any) => {
                         const order: Record<string, number> = { requests: 0, errors: 1, tokens: 2, cost: 3 };
@@ -1599,7 +1599,7 @@ export default function DashboardPage() {
                       <Tooltip
                         position={{ x: 0, y: 0 }}
                         wrapperStyle={{ zIndex: 1000, pointerEvents: "none" }}
-                        content={({ active, payload }: { active?: boolean; payload?: any[] }) => {
+                        content={({ active, payload }: { active?: boolean; payload?: readonly any[] }) => {
                           if (!pieTooltipOpen || hoveredPieIndex === null) return null;
                           if (!active || !payload || !payload[0]) return null;
                           const data = payload[0].payload;
@@ -1762,7 +1762,7 @@ export default function DashboardPage() {
                   <YAxis yAxisId="left" stroke={darkMode ? "#60a5fa" : "#3b82f6"} tickFormatter={(v: number) => formatCompactNumber(v)} fontSize={12} />
                   <YAxis yAxisId="right" orientation="right" stroke={darkMode ? "#94a3b8" : "#64748b"} tickFormatter={(v: number) => formatCompactNumber(v)} fontSize={12} />
                   <Tooltip 
-                    content={({ active, payload, label }: { active?: boolean; payload?: any[]; label?: string }) => {
+                    content={({ active, payload, label }: { active?: boolean; payload?: readonly any[]; label?: string }) => {
                       if (!active || !payload || !payload.length) return null;
                       const sortedPayload = [...payload].sort((a: any, b: any) => {
                         const order: Record<string, number> = { requests: 0, inputTokens: 1, outputTokens: 2, reasoningTokens: 3, cachedTokens: 4 };
@@ -2206,7 +2206,7 @@ export default function DashboardPage() {
                   width={trendVisible.cost && (!trendVisible.requests || !trendVisible.tokens) ? undefined : 0}
                 />
                 <Tooltip
-                  content={({ active, payload, label }: { active?: boolean; payload?: any[]; label?: string }) => {
+                  content={({ active, payload, label }: { active?: boolean; payload?: readonly any[]; label?: string }) => {
                     if (!active || !payload || !payload.length) return null;
                     const sortedPayload = [...payload].sort((a: any, b: any) => {
                       const order: Record<string, number> = { requests: 0, errors: 1, tokens: 2, cost: 3 };
@@ -2345,7 +2345,7 @@ export default function DashboardPage() {
                       <Tooltip 
                         position={{ x: 0, y: 0 }}
                         wrapperStyle={{ zIndex: 1000, pointerEvents: "none" }}
-                        content={({ active, payload }: { active?: boolean; payload?: any[] }) => {
+                        content={({ active, payload }: { active?: boolean; payload?: readonly any[] }) => {
                           if (!pieTooltipOpen || hoveredPieIndex === null) return null;
                           if (!active || !payload || !payload[0]) return null;
                           const data = payload[0].payload;
@@ -2500,7 +2500,7 @@ export default function DashboardPage() {
                   <YAxis yAxisId="left" stroke={darkMode ? "#60a5fa" : "#3b82f6"} tickFormatter={(v: number) => formatCompactNumber(v)} fontSize={12} />
                   <YAxis yAxisId="right" orientation="right" stroke={darkMode ? "#94a3b8" : "#64748b"} tickFormatter={(v: number) => formatCompactNumber(v)} fontSize={12} />
                   <Tooltip 
-                    content={({ active, payload, label }: { active?: boolean; payload?: any[]; label?: string }) => {
+                    content={({ active, payload, label }: { active?: boolean; payload?: readonly any[]; label?: string }) => {
                       if (!active || !payload || !payload.length) return null;
                       const sortedPayload = [...payload].sort((a: any, b: any) => {
                         const order: Record<string, number> = { requests: 0, inputTokens: 1, outputTokens: 2, reasoningTokens: 3, cachedTokens: 4 };
