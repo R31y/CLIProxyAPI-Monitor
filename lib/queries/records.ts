@@ -38,6 +38,7 @@ type SortField =
   | "cost"
   | "isError";
 type SortOrder = "asc" | "desc";
+export type SortKey = { field: SortField; order: SortOrder };
 
 // 注意：必须使用 sql.raw() 来引用外部表字段，否则 Drizzle 会丢失表名前缀
 // 反斜杠需要双重转义：JS 字符串转义 + PostgreSQL E'' 字符串转义
@@ -82,6 +83,23 @@ const COST_EXPR = sql<number>`coalesce(
 
 const CREDENTIAL_NAME_EXPR = sql<string>`coalesce(nullif(${authFileMappings.name}, ''), nullif(${usageRecords.source}, ''), '-')`;
 
+function getSortExpr(sortField: SortField): any {
+  switch (sortField) {
+    case "model": return usageRecords.model;
+    case "route": return usageRecords.route;
+    case "source": return CREDENTIAL_NAME_EXPR;
+    case "totalTokens": return usageRecords.totalTokens;
+    case "inputTokens": return usageRecords.inputTokens;
+    case "outputTokens": return usageRecords.outputTokens;
+    case "reasoningTokens": return usageRecords.reasoningTokens;
+    case "cachedTokens": return usageRecords.cachedTokens;
+    case "cost": return COST_EXPR;
+    case "isError": return usageRecords.isError;
+    case "occurredAt":
+    default: return usageRecords.occurredAt;
+  }
+}
+
 function parseCursor(input: string | null): UsageRecordCursor | null {
   if (!input) return null;
   try {
@@ -97,13 +115,13 @@ function parseCursor(input: string | null): UsageRecordCursor | null {
 }
 
 function buildCursorWhere(
-  sortField: SortField,
-  sortOrder: SortOrder,
+  primaryKey: SortKey,
   cursor: UsageRecordCursor | null,
   sortExpr: any
 ): any {
   if (!cursor) return undefined;
 
+  const { field: sortField, order: sortOrder } = primaryKey;
   const { lastValue, lastId } = cursor;
 
   if (sortField === "occurredAt") {
@@ -121,6 +139,7 @@ function buildCursorWhere(
 
 export async function getUsageRecords(input: {
   limit?: number;
+  sortKeys?: SortKey[];
   sortField?: SortField;
   sortOrder?: SortOrder;
   cursor?: string | null;
@@ -132,8 +151,19 @@ export async function getUsageRecords(input: {
   includeFilters?: boolean;
 }) {
   const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
-  const sortField: SortField = input.sortField ?? "occurredAt";
-  const sortOrder: SortOrder = input.sortOrder ?? "desc";
+  const rawSortKeys: SortKey[] =
+    input.sortKeys && input.sortKeys.length > 0
+      ? input.sortKeys
+      : [{ field: input.sortField ?? "occurredAt", order: input.sortOrder ?? "desc" }];
+  const seenFields = new Set<SortField>();
+  const sortKeys: SortKey[] = rawSortKeys.filter(k => {
+    if (seenFields.has(k.field)) return false;
+    seenFields.add(k.field);
+    return true;
+  });
+  const primaryKey = sortKeys[0];
+  const primaryField = primaryKey.field;
+  const primaryOrder = primaryKey.order;
   const cursor = parseCursor(input.cursor ?? null);
 
   const whereParts: any[] = [];
@@ -164,35 +194,9 @@ export async function getUsageRecords(input: {
     whereParts.push(sql`${CREDENTIAL_NAME_EXPR} = ${input.source}`);
   }
 
-  const sortExpr = (() => {
-    switch (sortField) {
-      case "model":
-        return usageRecords.model;
-      case "route":
-        return usageRecords.route;
-      case "source":
-        return CREDENTIAL_NAME_EXPR;
-      case "totalTokens":
-        return usageRecords.totalTokens;
-      case "inputTokens":
-        return usageRecords.inputTokens;
-      case "outputTokens":
-        return usageRecords.outputTokens;
-      case "reasoningTokens":
-        return usageRecords.reasoningTokens;
-      case "cachedTokens":
-        return usageRecords.cachedTokens;
-      case "cost":
-        return COST_EXPR;
-      case "isError":
-        return usageRecords.isError;
-      case "occurredAt":
-      default:
-        return usageRecords.occurredAt;
-    }
-  })() as any;
+  const primarySortExpr = getSortExpr(primaryField) as any;
 
-  const cursorWhere = buildCursorWhere(sortField, sortOrder, cursor, sortExpr);
+  const cursorWhere = buildCursorWhere(primaryKey, cursor, primarySortExpr);
   if (cursorWhere) whereParts.push(cursorWhere);
 
   const where = whereParts.length ? and(...whereParts) : undefined;
@@ -218,8 +222,11 @@ export async function getUsageRecords(input: {
     .leftJoin(authFileMappings, eq(usageRecords.authIndex, authFileMappings.authId))
     .where(where)
     .orderBy(
-      sortOrder === "asc" ? asc(sortExpr) : desc(sortExpr),
-      sortOrder === "asc" ? asc(usageRecords.id) : desc(usageRecords.id)
+      ...sortKeys.map(k => {
+        const expr = getSortExpr(k.field) as any;
+        return k.order === "asc" ? asc(expr) : desc(expr);
+      }),
+      primaryOrder === "asc" ? asc(usageRecords.id) : desc(usageRecords.id)
     )
     .limit(limit + 1);
 
@@ -233,7 +240,7 @@ export async function getUsageRecords(input: {
     const last = items[items.length - 1];
     if (!last) return null;
     const lastValue = (() => {
-      switch (sortField) {
+      switch (primaryField) {
         case "model":
           return last.model;
         case "totalTokens":

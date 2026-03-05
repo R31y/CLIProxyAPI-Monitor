@@ -792,7 +792,14 @@ export default function DashboardPage() {
 
         if (!res.ok) {
           if (active) {
-            setOverviewError("无法加载实时用量：" + res.statusText);
+            let errMsg: string;
+            try {
+              const errBody = await res.json();
+              errMsg = errBody?.error || res.statusText || `HTTP ${res.status}`;
+            } catch {
+              errMsg = res.statusText || `HTTP ${res.status}`;
+            }
+            setOverviewError("无法加载实时用量：" + errMsg);
             setOverview(null);
           }
           return;
@@ -812,7 +819,7 @@ export default function DashboardPage() {
         if (!active) return;
         const error = err as Error;
         if ((error as any)?.name === "AbortError") return;
-        setOverviewError("无法加载实时用量：" + error.message);
+        setOverviewError("无法加载实时用量：" + (error.message || "未知错误"));
         setOverview(null);
       } finally {
         if (active) setLoadingOverview(false);

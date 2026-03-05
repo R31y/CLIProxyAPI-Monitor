@@ -52,6 +52,7 @@ type SortField =
   | "cost"
   | "isError";
 type SortOrder = "asc" | "desc";
+type SortKey = { field: SortField; order: SortOrder };
 
 type ColumnKey =
   | "occurredAt"
@@ -250,24 +251,31 @@ function SkeletonRow() {
 
 function SortHeader({
   label,
-  active,
+  priority,
   order,
+  showPriority,
   onClick
 }: {
   label: string;
-  active: boolean;
-  order: SortOrder;
+  priority?: number;
+  order?: SortOrder;
+  showPriority?: boolean;
   onClick: () => void;
 }) {
+  const active = priority !== undefined;
   return (
     <button
       type="button"
       onClick={onClick}
+      title={active ? "" : undefined}
       className={`inline-flex items-center gap-1 font-semibold transition ${active ? "text-white" : "text-slate-300 hover:text-white"}`}
     >
       <span>{label}</span>
-      {active ? (
+      {active && order ? (
         order === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />
+      ) : null}
+      {active && showPriority && priority !== undefined ? (
+        <span className="text-[10px] font-bold leading-none opacity-60">{priority}</span>
       ) : null}
     </button>
   );
@@ -308,8 +316,8 @@ export default function RecordsPage() {
   const [appliedStart, setAppliedStart] = useState<string>("");
   const [appliedEnd, setAppliedEnd] = useState<string>("");
 
-  const [sortField, setSortField] = useState<SortField>("occurredAt");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  const [sortKeys, setSortKeys] = useState<SortKey[]>([{ field: "occurredAt", order: "desc" }]);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [columnSettings, setColumnSettings] = useState<ColumnSetting[]>(
     DEFAULT_COLUMN_ORDER.map((key) => ({
       key,
@@ -509,8 +517,7 @@ export default function RecordsPage() {
     (cursorValue?: string | null, includeFilters?: boolean) => {
       const params = new URLSearchParams();
       params.set("limit", String(PAGE_SIZE));
-      params.set("sortField", sortField);
-      params.set("sortOrder", sortOrder);
+      params.set("sort", sortKeys.map(k => `${k.field}:${k.order}`).join(","));
       if (cursorValue) params.set("cursor", cursorValue);
       if (appliedModel) params.set("model", appliedModel);
       if (appliedRoute) params.set("route", appliedRoute);
@@ -520,7 +527,7 @@ export default function RecordsPage() {
       if (includeFilters) params.set("includeFilters", "1");
       return params;
     },
-    [sortField, sortOrder, appliedModel, appliedRoute, appliedSource, appliedStart, appliedEnd]
+    [sortKeys, appliedModel, appliedRoute, appliedSource, appliedStart, appliedEnd]
   );
 
   const fetchRecords = useCallback(
@@ -538,6 +545,7 @@ export default function RecordsPage() {
         setCursor(data.nextCursor ?? null);
         setHasMore(Boolean(data.nextCursor));
         setRecords((prev) => (opts.append ? [...prev, ...data.items] : data.items));
+        setHasLoaded(true);
         if (data.filters?.models?.length) {
           setModels(data.filters.models);
         }
@@ -670,17 +678,27 @@ export default function RecordsPage() {
   }, [cursor, fetchRecords, hasMore, loading]);
 
   const handleSort = useCallback((field: SortField) => {
-    if (field === sortField) {
-      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
-    } else {
-      setSortField(field);
-      setSortOrder("desc");
-    }
-  }, [sortField]);
+    setSortKeys(prev => {
+      const idx = prev.findIndex(k => k.field === field);
+      if (idx !== -1) {
+        const current = prev[idx];
+        if (current.order === "asc") {
+          // 第三次点击：移除（多键时）或循环回 desc（唯一键时）
+          // occurredAt 列不允许移除，始终保留
+          if (prev.length > 1 && field !== "occurredAt") return prev.filter((_, i) => i !== idx);
+          return prev.map((k, i) => i === idx ? { ...k, order: "desc" } : k);
+        }
+        // 第二次点击： desc → asc
+        return prev.map((k, i) => i === idx ? { ...k, order: "asc" } : k);
+      }
+      // 第一次点击：插入头部为主键
+      return [{ field, order: "desc" }, ...prev];
+    });
+  }, []);
 
   useEffect(() => {
     resetAndFetch(false);
-  }, [sortField, sortOrder, resetAndFetch]);
+  }, [sortKeys, resetAndFetch]);
 
   const applyFilters = (overrides?: { model?: string; route?: string; source?: string; start?: string; end?: string }) => {
     const nextModel = (overrides?.model ?? modelInput).trim();
@@ -773,16 +791,20 @@ export default function RecordsPage() {
         return <span className="font-semibold text-slate-300">{COLUMN_LABELS[columnKey]}</span>;
       }
 
+      const keyIdx = sortKeys.findIndex(k => k.field === sortTarget);
+      const priority = keyIdx !== -1 ? keyIdx + 1 : undefined;
+      const order = keyIdx !== -1 ? sortKeys[keyIdx].order : undefined;
       return (
         <SortHeader
           label={COLUMN_LABELS[columnKey]}
-          active={sortField === sortTarget}
-          order={sortOrder}
+          priority={priority}
+          order={order}
+          showPriority={sortKeys.length > 1}
           onClick={() => handleSort(sortTarget)}
         />
       );
     },
-    [sortField, sortOrder, handleSort]
+    [sortKeys, handleSort]
   );
 
   const renderCellByColumn = useCallback(
@@ -1229,8 +1251,8 @@ export default function RecordsPage() {
         <p className="mt-3 text-xs text-slate-500">当前筛选：{filterSummary}</p>
       </section>
 
-      <section className={`mt-5 rounded-2xl bg-slate-800/40 p-4 shadow-sm ring-1 ring-slate-700 ${loadingEmpty ? "min-h-[100vh]" : ""}`}>
-        {!loadingEmpty ? (
+      <section className={`mt-5 rounded-2xl bg-slate-800/40 p-4 shadow-sm ring-1 ring-slate-700 ${loadingEmpty && !hasLoaded ? "min-h-[100vh]" : ""}`}>
+        {(!loadingEmpty || hasLoaded) ? (
           <div ref={tableWrapperRef} className="overflow-auto">
             <table className="min-w-full w-full table-fixed border-separate border-spacing-y-2">
               <thead className="sticky top-0 z-10">
@@ -1289,12 +1311,23 @@ export default function RecordsPage() {
                     })}
                   </tr>
                 ))}
+                {loading && records.length === 0 && hasLoaded ? (
+                  [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(i => (
+                    <tr key={`skel-${i}`} className="h-13">
+                      {visibleColumns.map(colKey => (
+                        <td key={colKey} className="px-3 py-3">
+                          <div className="h-3 w-4/5 animate-pulse rounded bg-slate-700/60" />
+                        </td>
+                      ))}
+                    </tr>
+                  ))
+                ) : null}
               </tbody>
             </table>
           </div>
         ) : null}
 
-        {loadingEmpty ? (
+        {loadingEmpty && !hasLoaded ? (
           <div className="mt-4 grid min-h-[55vh] gap-3">
             {[1, 2, 3].map((i) => (
               <SkeletonRow key={i} />
@@ -1306,7 +1339,7 @@ export default function RecordsPage() {
 
         {isEmpty ? <p className="mt-4 text-sm text-slate-400">暂无记录</p> : null}
 
-        {records.length > 0 ? (
+        {(records.length > 0 || (hasLoaded && loading)) ? (
           <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
             <span>已加载 {records.length} 条</span>
             {loading ? <span>加载中...</span> : hasMore ? <span>继续向下滚动加载</span> : <span>已到底</span>}

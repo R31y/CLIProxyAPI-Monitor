@@ -2,6 +2,11 @@
 
 ## 2026-03-06
 
+- 修复首页"无法加载实时用量："后内容为空的问题：
+  - HTTP/2 协议不携带 status text，`res.statusText` 在现代部署中始终为空字符串。
+  - 改为优先读取响应体 JSON 中的 `error` 字段，回退到 `res.statusText`，最终回退到 `HTTP ${res.status}`。
+  - `catch` 分支的 `error.message` 同样增加 `|| "未知错误"` 兜底。
+
 - Explore 页模型图例排序切换：
   - 点击"模型图例"右侧的排序标签可循环切换：首字母 → Token用量 → 次数 → 首字母。
   - 排序计算在 `ModelLegend` 组件内部维护（`legendSort` state + `sortedModels` useMemo），不影响外部状态。
@@ -18,6 +23,13 @@
   - 新颜色相邻最小色相差从 <5° 提升至 ≥15°，视觉区分度显著改善。
 
 ## 2026-03-05
+
+- Records 页表头多列排序：
+  - 点击**未激活**列 → 插入头部成为主排序键（desc）；点击**已激活**列第二次 → 切换为 asc；第三次 → 从排序列表移除（`occurredAt` 列不允许移除，第三次循环回 desc）。
+  - 存在多个排序键时，表头箭头旁显示小数字标注优先级（₁₂₃...）；悬停显示操作提示。
+  - URL 参数改为 `sort=field:order,field:order` 格式，兼容旧 `sortField`+`sortOrder` 参数。
+  - 游标分页采用方案 A：以首个排序键（主键）+ id 作为游标，次级排序在每页内精确有序。
+  - 改动文件：`lib/queries/records.ts`（添加 `SortKey` 类型和 `getSortExpr` 辅助函数，`getUsageRecords` 接受 `sortKeys[]`）、`app/api/records/route.ts`（解析 `sort` 参数）、`app/records/page.tsx`（多键排序状态与交互）。
 
 - 首页饼图颜色分配方式优化：
   - 原逻辑按模型在原始数组中的位置分配颜色，导致颜色与排名无关联。
