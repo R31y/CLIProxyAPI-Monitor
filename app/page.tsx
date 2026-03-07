@@ -27,6 +27,7 @@ type OverviewAPIResponse = {
   empty: boolean;
   days: number;
   timezone?: string;
+  lastSyncAt?: string | null;
   meta?: OverviewMeta;
   filters?: { models: string[]; routes: string[]; names: string[] };
 };
@@ -815,6 +816,12 @@ export default function DashboardPage() {
         setRouteOptions(Array.from(new Set(data.filters?.routes ?? [])));
         setNameOptions(Array.from(new Set(data.filters?.names ?? [])));
         setAppliedDays(data.days ?? rangeDays);
+        if (data.lastSyncAt) {
+          const dbTime = new Date(data.lastSyncAt);
+          if (Number.isFinite(dbTime.getTime())) {
+            setLastSyncTime((prev) => (!prev || dbTime > prev ? dbTime : prev));
+          }
+        }
       } catch (err) {
         if (!active) return;
         const error = err as Error;

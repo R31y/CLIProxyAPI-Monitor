@@ -85,7 +85,7 @@ function normalizePageSize(value?: number | null) {
 export async function getOverview(
   daysInput?: number,
   opts?: { model?: string | null; route?: string | null; source?: string | null; name?: string | null; page?: number | null; pageSize?: number | null; start?: string | Date | null; end?: string | Date | null; timezone?: string | null }
-): Promise<{ overview: UsageOverview; empty: boolean; days: number; meta: OverviewMeta; filters: { models: string[]; routes: string[]; sources: string[]; names: string[] }; timezone: string }> {
+): Promise<{ overview: UsageOverview; empty: boolean; days: number; meta: OverviewMeta; filters: { models: string[]; routes: string[]; sources: string[]; names: string[] }; timezone: string; lastSyncAt: string | null }> {
   const startDate = parseDateInput(opts?.start);
   const endDate = parseDateInput(opts?.end);
   const hasCustomRange = startDate && endDate && endDate >= startDate;
@@ -236,6 +236,10 @@ export async function getOverview(
     .groupBy(credentialNameExpr)
     .orderBy(credentialNameExpr);
 
+  const lastSyncAtPromise: Promise<{ v: Date | null }[]> = db
+    .select({ v: sql<Date | null>`max(${usageRecords.syncedAt})` })
+    .from(usageRecords);
+
   const [
     totalsRowResult,
     priceRows,
@@ -247,7 +251,8 @@ export async function getOverview(
     availableModelsRows,
     availableRoutesRows,
     availableSourcesRows,
-    availableNamesRows
+    availableNamesRows,
+    lastSyncAtRows
   ] = await Promise.all([
     totalsPromise,
     pricePromise,
@@ -259,7 +264,8 @@ export async function getOverview(
     availableModelsPromise,
     availableRoutesPromise,
     availableSourcesPromise,
-    availableNamesPromise
+    availableNamesPromise,
+    lastSyncAtPromise
   ]);
 
   const totalsRow =
@@ -371,6 +377,7 @@ export async function getOverview(
     days,
     meta: { page, pageSize, totalModels, totalPages },
     filters,
-    timezone: tz
+    timezone: tz,
+    lastSyncAt: (() => { const d = lastSyncAtRows[0]?.v; return d ? new Date(d).toISOString() : null; })()
   };
 }
