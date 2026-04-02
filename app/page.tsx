@@ -226,7 +226,14 @@ export default function DashboardPage() {
   const [pricesSyncModalOpen, setPricesSyncModalOpen] = useState(false);
   const [pricesSyncData, setPricesSyncData] = useState<{
     summary?: { total: number; updated: number; skipped: number; failed: number };
-    details?: { model: string; status: string; reason?: string; matchedWith?: string }[];
+    details?: {
+      model: string;
+      status: string;
+      reason?: string;
+      matchedWith?: string;
+      selectionSummary?: string;
+      selectionDebug?: string;
+    }[];
     error?: string;
   } | null>(null);
 
@@ -3010,8 +3017,9 @@ export default function DashboardPage() {
                       <tr className={`border-b ${darkMode ? "border-slate-700" : "border-slate-300"}`}>
                         <th className="py-2 px-2 text-left">模型</th>
                         <th className="py-2 px-2 text-left">状态</th>
-                        <th className="py-2 px-2 text-left">匹配到</th>
-                        <th className="py-2 px-2 text-left">原因</th>
+                        <th className="py-2 px-2 text-left">匹配上游</th>
+                        <th className="py-2 px-2 text-left">详情</th>
+                        <th className="py-2 px-2 text-center w-12"> </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -3028,8 +3036,26 @@ export default function DashboardPage() {
                             </span>
                           </td>
                           <td className="py-1.5 px-2 font-mono text-emerald-400">{d.matchedWith || "-"}</td>
-                          <td className="py-1.5 px-2 text-slate-500 max-w-xs truncate" title={d.reason}>
-                            {d.reason || "-"}
+                          <td className="py-1.5 px-2 text-slate-500 max-w-xs" title={d.reason}>
+                            <div className="truncate">{d.reason || "-"}</div>
+                          </td>
+                          <td className="py-1.5 px-2 text-center">
+                            {d.selectionDebug ? (
+                              <button
+                                type="button"
+                                title={d.selectionDebug}
+                                aria-label="查看详细说明"
+                                className={`inline-flex h-5 w-5 cursor-help items-center justify-center rounded-full border text-[11px] font-semibold transition ${
+                                  darkMode
+                                    ? "border-slate-600 text-slate-300 hover:border-slate-400 hover:bg-slate-700"
+                                    : "border-slate-300 text-slate-600 hover:border-slate-400 hover:bg-slate-100"
+                                }`}
+                              >
+                                ?
+                              </button>
+                            ) : (
+                              <span className={`text-xs ${darkMode ? "text-slate-600" : "text-slate-400"}`}>-</span>
+                            )}
                           </td>
                         </tr>
                       ))}

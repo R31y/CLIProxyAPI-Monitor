@@ -78,7 +78,22 @@ type ModelsDevProvider = {
 
 type ModelsDevResponse = Record<string, ModelsDevProvider>;
 type PriceInfo = { input: number; output: number; cached: number };
-type PriceModeCandidate = { count: number; firstSeenOrder: number; price: PriceInfo };
+type PriceModeCandidate = {
+  count: number;
+  firstSeenOrder: number;
+  firstSeenProvider: string;
+  providers: Set<string>;
+  price: PriceInfo;
+};
+type PriceSelectionMeta = {
+  modeCount: number;
+  totalCount: number;
+  tieCount: number;
+  tieBreakApplied: boolean;
+  firstSeenProvider: string;
+  providers: string[];
+  signature: string;
+};
 
 export async function POST(request: Request) {
   try {
@@ -155,7 +170,7 @@ export async function POST(request: Request) {
     const priceModeBuckets = new Map<string, Map<string, PriceModeCandidate>>();
     let seenOrder = 0;
 
-    for (const provider of Object.values(modelsDevData)) {
+    for (const [providerId, provider] of Object.entries(modelsDevData)) {
       if (!provider.models) continue;
       for (const model of Object.values(provider.models)) {
         // 允许免费模型入库
@@ -178,10 +193,13 @@ export async function POST(request: Request) {
 
           if (existingCandidate) {
             existingCandidate.count += 1;
+            existingCandidate.providers.add(providerId);
           } else {
             modelBucket.set(signature, {
               count: 1,
               firstSeenOrder: seenOrder,
+              firstSeenProvider: providerId,
+              providers: new Set([providerId]),
               price: priceInfo
             });
           }
@@ -193,12 +211,26 @@ export async function POST(request: Request) {
     }
 
     const priceMap = new Map<string, PriceInfo>();
+    const priceSelectionMetaMap = new Map<string, PriceSelectionMeta>();
     for (const [modelId, candidates] of priceModeBuckets.entries()) {
       let selected: PriceModeCandidate | null = null;
+      let selectedSignature: string | null = null;
+      let totalCount = 0;
+      let maxCount = 0;
+      let tieCount = 0;
 
-      for (const candidate of candidates.values()) {
+      for (const [signature, candidate] of candidates.entries()) {
+        totalCount += candidate.count;
+        if (candidate.count > maxCount) {
+          maxCount = candidate.count;
+          tieCount = 1;
+        } else if (candidate.count === maxCount) {
+          tieCount += 1;
+        }
+
         if (!selected) {
           selected = candidate;
+          selectedSignature = signature;
           continue;
         }
 
@@ -207,13 +239,37 @@ export async function POST(request: Request) {
           (candidate.count === selected.count && candidate.firstSeenOrder < selected.firstSeenOrder)
         ) {
           selected = candidate;
+          selectedSignature = signature;
         }
       }
 
       if (selected) {
         priceMap.set(modelId, selected.price);
+        priceSelectionMetaMap.set(modelId, {
+          modeCount: selected.count,
+          totalCount,
+          tieCount,
+          tieBreakApplied: tieCount > 1,
+          firstSeenProvider: selected.firstSeenProvider,
+          providers: Array.from(selected.providers).sort(),
+          signature: selectedSignature ?? ""
+        });
       }
     }
+
+    const buildSelectionSummary = (meta: PriceSelectionMeta | undefined) => {
+      if (!meta) return undefined;
+      if (meta.tieBreakApplied) {
+        return `命中 ${meta.modeCount}/${meta.totalCount}｜存在并列｜源 ${meta.firstSeenProvider}`;
+      }
+      return `命中 ${meta.modeCount}/${meta.totalCount}｜源 ${meta.firstSeenProvider}`;
+    };
+
+    const buildSelectionDebug = (meta: PriceSelectionMeta | undefined) => {
+      if (!meta) return undefined;
+      const providers = meta.providers.length > 0 ? meta.providers.join(",") : meta.firstSeenProvider;
+      return `命中计数=${meta.modeCount}/${meta.totalCount}；并列候选=${meta.tieCount}${meta.tieBreakApplied ? "（按首次出现裁决）" : ""}；首来源=${meta.firstSeenProvider}；来源集=${providers}；签名=${meta.signature}`;
+    };
 
     // 3. 从 CLIProxyAPI 获取当前模型列表
     // 使用 OpenAI 兼容的 /v1/models 端点而非管理 API
@@ -234,7 +290,14 @@ export async function POST(request: Request) {
     // 4. 匹配并收集要更新的价格
     let skippedCount = 0;
     let failedCount = 0;
-    const details: { model: string; status: string; matchedWith?: string; reason?: string }[] = [];
+    const details: {
+      model: string;
+      status: string;
+      matchedWith?: string;
+      reason?: string;
+      selectionSummary?: string;
+      selectionDebug?: string;
+    }[] = [];
     const priceUpdates: { model: string; priceInfo: PriceInfo; matchedKey: string }[] = [];
 
     for (const { id: modelId } of models) {
@@ -302,8 +365,10 @@ export async function POST(request: Request) {
         continue;
       }
 
+      const selectionSummary = buildSelectionSummary(priceSelectionMetaMap.get(matchedKey));
+      const selectionDebug = buildSelectionDebug(priceSelectionMetaMap.get(matchedKey));
       priceUpdates.push({ model: modelId, priceInfo, matchedKey });
-      details.push({ model: modelId, status: "pending", matchedWith: matchedKey });
+      details.push({ model: modelId, status: "pending", matchedWith: matchedKey, selectionSummary, selectionDebug });
     }
 
     // 5. 差异化更新（仅更新变化的价格）
@@ -349,7 +414,15 @@ export async function POST(request: Request) {
         const detailIndex = details.findIndex((d) => d.model === modelId);
         if (detailIndex !== -1) {
           const prev = details[detailIndex];
-          details[detailIndex] = { model: modelId, status: "skipped", reason: "价格未变化", matchedWith: prev.matchedWith };
+          const composedReason = prev.selectionSummary ? `未变化（${prev.selectionSummary}）` : "未变化";
+          details[detailIndex] = {
+            model: modelId,
+            status: "skipped",
+            reason: composedReason,
+            matchedWith: prev.matchedWith,
+            selectionSummary: prev.selectionSummary,
+            selectionDebug: prev.selectionDebug
+          };
         }
         continue;
       }
@@ -372,18 +445,30 @@ export async function POST(request: Request) {
         const detailIndex = details.findIndex((d) => d.model === modelId);
         if (detailIndex !== -1) {
           const prev = details[detailIndex];
-          details[detailIndex] = { model: modelId, status: "updated", matchedWith: prev.matchedWith };
+          const composedReason = prev.selectionSummary ? `已更新（${prev.selectionSummary}）` : "已更新";
+          details[detailIndex] = {
+            model: modelId,
+            status: "updated",
+            matchedWith: prev.matchedWith,
+            reason: composedReason,
+            selectionSummary: prev.selectionSummary,
+            selectionDebug: prev.selectionDebug
+          };
         }
       } catch (err) {
         failedCount++;
         const detailIndex = details.findIndex((d) => d.model === modelId);
         if (detailIndex !== -1) {
           const prev = details[detailIndex];
+          const dbError = err instanceof Error ? err.message : "数据库写入失败";
+          const composedReason = prev.selectionSummary ? `写库失败：${dbError}（${prev.selectionSummary}）` : `写库失败：${dbError}`;
           details[detailIndex] = {
             model: modelId,
             status: "failed",
-            reason: err instanceof Error ? err.message : "数据库写入失败",
-            matchedWith: prev.matchedWith
+            reason: composedReason,
+            matchedWith: prev.matchedWith,
+            selectionSummary: prev.selectionSummary,
+            selectionDebug: prev.selectionDebug
           };
         }
       }
