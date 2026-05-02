@@ -19,19 +19,29 @@ const CONFIG = {
     key: process.env.CPA_REDIS_KEY || 'queue',
   },
   // 本适配器监听的端口
-  port: parseInt(process.env.ADAPTER_PORT || '3001'),
+  port: parseInt(process.env.ADAPTER_PORT || '36871'),
   // 轮询间隔 (毫秒)
   pollInterval: parseInt(process.env.POLL_INTERVAL || '15000'),
   // 内存中保留的最大记录数
-  maxBufferSize: parseInt(process.env.MAX_BUFFER_SIZE || '5000'),
+  maxBufferSize: parseInt(process.env.MAX_BUFFER_SIZE || '50000'),
   // 每次拉取的最大记录数
-  batchSize: parseInt(process.env.BATCH_SIZE || '100'),
+  batchSize: parseInt(process.env.BATCH_SIZE || '500'),
   // 访问 /usage 后是否清空内存缓冲区；true=增量导出，false=保留全量内存快照
   clearBufferOnRead: (process.env.CLEAR_BUFFER_ON_READ || 'false').toLowerCase() === 'true',
+  // 远端 dashboard sync 配置
+  sync: {
+    enabled: (process.env.ENABLE_PERIODIC_SYNC || 'false').toLowerCase() === 'true',
+    dashboardUrl: (process.env.DASHBOARD_URL || '').trim().replace(/\/$/, ''),
+    token: (process.env.SYNC_TOKEN || process.env.CPA_SECRET_KEY || '').trim(),
+    interval: parseInt(process.env.SYNC_INTERVAL || '6000000'), // 默认同步间隔 100 分钟
+    timeoutMs: parseInt(process.env.SYNC_TIMEOUT_MS || '300000'),
+    syncOnStart: (process.env.SYNC_ON_START || 'false').toLowerCase() === 'true',
+  },
 };
 
 // 内存缓冲区，用于存放最近拉取的记录
 let usageBuffer = [];
+let syncInProgress = false;
 
 // 初始化 Redis 客户端
 const redis = new Redis({
@@ -80,6 +90,38 @@ function normalizeRecord(record) {
   };
 }
 
+function toPositiveInt(value, fallback) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return parsed;
+}
+
+function getSyncConfig() {
+  const interval = toPositiveInt(CONFIG.sync.interval, 60000);
+  const timeoutMs = toPositiveInt(CONFIG.sync.timeoutMs, 30000);
+
+  return {
+    ...CONFIG.sync,
+    interval,
+    timeoutMs,
+  };
+}
+
+function getSyncUrl() {
+  const { dashboardUrl } = getSyncConfig();
+  if (!dashboardUrl) return '';
+
+  try {
+    const url = new URL('/api/sync', `${dashboardUrl}/`);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return '';
+    }
+    return url.toString();
+  } catch {
+    return '';
+  }
+}
+
 /**
  * 从 Redis 拉取并聚合数据
  */
@@ -124,9 +166,76 @@ async function drainQueue() {
   }
 }
 
+async function triggerSync(reason = 'interval') {
+  const syncConfig = getSyncConfig();
+
+  if (!syncConfig.enabled) return;
+
+  const syncUrl = getSyncUrl();
+  if (!syncUrl) {
+    console.error('[sync] Invalid or missing DASHBOARD_URL');
+    return;
+  }
+
+  if (!syncConfig.token) {
+    console.error('[sync] Missing SYNC_TOKEN/CRON_SECRET/PASSWORD');
+    return;
+  }
+
+  if (syncInProgress) {
+    console.warn('[sync] Previous sync still in progress, skipped');
+    return;
+  }
+
+  syncInProgress = true;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), syncConfig.timeoutMs);
+
+  try {
+    const response = await fetch(syncUrl, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${syncConfig.token}`,
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      console.error(`[sync] Trigger failed (${reason}): ${response.status} ${response.statusText}`);
+      return;
+    }
+
+    let result = null;
+    try {
+      result = await response.json();
+    } catch {
+      result = null;
+    }
+
+    console.log(`[sync] Triggered (${reason})`, result || { status: response.status });
+  } catch (error) {
+    const isTimeout = error instanceof Error && error.name === 'AbortError';
+    console.error(`[sync] Trigger error (${reason}): ${isTimeout ? 'timeout' : error.message}`);
+  } finally {
+    clearTimeout(timeoutId);
+    syncInProgress = false;
+  }
+}
+
 // 定时任务
 setInterval(drainQueue, CONFIG.pollInterval);
 drainQueue();
+
+const syncConfig = getSyncConfig();
+if (syncConfig.enabled) {
+  setInterval(() => {
+    triggerSync('interval');
+  }, syncConfig.interval);
+
+  if (syncConfig.syncOnStart) {
+    triggerSync('startup');
+  }
+}
 
 /**
  * 将内存缓冲区的数据转换为旧版 /usage 聚合格式
@@ -215,4 +324,12 @@ server.listen(CONFIG.port, () => {
   console.log(`Polling CPA Redis at ${CONFIG.redis.host}:${CONFIG.redis.port}`);
   console.log(`Redis queue key: ${CONFIG.redis.key}`);
   console.log(`Clear buffer on read: ${CONFIG.clearBufferOnRead}`);
+
+  const syncUrl = getSyncUrl();
+  console.log(`Periodic sync enabled: ${syncConfig.enabled}`);
+  if (syncConfig.enabled) {
+    console.log(`Periodic sync target: ${syncUrl || 'invalid DASHBOARD_URL'}`);
+    console.log(`Periodic sync interval: ${syncConfig.interval}ms`);
+    console.log(`Periodic sync on start: ${syncConfig.syncOnStart}`);
+  }
 });
