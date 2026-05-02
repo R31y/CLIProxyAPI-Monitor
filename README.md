@@ -1,3 +1,7 @@
+> [!CAUTION]
+> #### 注：CPA 上游已于 [v6.10.0](https://github.com/router-for-me/CLIProxyAPI/releases/tag/v6.10.0) 正式去除 `/usage` 接口，若要使用本项目追踪使用数据，请使用 v6.9.49 或更早版本。
+
+
 # CLIProxyAPI 数据看板
 
 基于 Next.js App Router + Drizzle + Postgres 的数据看板，用于自动拉取上游 CLIProxyAPI 使用数据，**持久化到数据库**，并进行数据可视化。
